@@ -48,23 +48,35 @@
     <p class="hint">Click a row for the detail view: the value maths, the farm plan and the comparables behind it.</p>
   </section>
 
-  <section class="panel" aria-label="How the value is built">
+  <section class="panel" id="risingPanel" aria-label="Rising fast">
+    <h2>Rising fast — the early finds</h2>
+    <p>The five board protocols whose TVL grew fastest over the last 7 days. A fast grower with a
+    small TVL is the radar's early find: it ranks lower on implied value today, but its growth is
+    already moving it up. Growth counts in the value at 80% of the change, clamped to +100%, so a
+    +4,448% week still counts as +100%.</p>
+    <table id="rising"><thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>7-day growth</th><th>Implied value</th><th>Board rank</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="panel" id="modelPanel" aria-label="How the value is built">
     <h2>How the implied value is built</h2>
-    <p>Each category earns its multiple from the market itself: the median <em>market-cap / TVL</em> of the
-    snapshot&rsquo;s live-token protocols in that category (at least 3 comparables, otherwise the global median
-    of <strong id="glob">—</strong>). Then:</p>
-    <p class="formula">implied = TVL &times; category&nbsp;multiple &times; growth &times; maturity &times; chains</p>
+    <p>Each protocol earns its multiple from the market itself: the median <em>market-cap / TVL</em> of the
+    snapshot&rsquo;s live-token protocols. A category uses its own median when at least 3 live tokens trade
+    there; a thinner category borrows the median of its <strong>family</strong> — categories grouped by what
+    they do (vaults and curators, lending, trading, staking, bridges, RWA, AI, payments) — and a category
+    in no family borrows the global median of all <strong id="glob">—</strong> live tokens. Every multiple on
+    this board rests on at least 3 live comparables, so one wild outlier never sets a price. Then:</p>
+    <p class="formula">implied = TVL &times; multiple &times; growth &times; maturity &times; chains</p>
     <ul class="model">
-      <li><strong>Growth</strong> — 7-day TVL change, clamped to −50%…+100%, moves value by 60% of the change.</li>
+      <li><strong>Growth</strong> — 7-day TVL change, clamped to −50%…+100%, moves value by 80% of the change.</li>
       <li><strong>Maturity</strong> — 0.70 + 0.30 &times; min(age, 3y) / 3y. Older protocols are more proven; unknown age counts as 1 year.</li>
       <li><strong>Chains</strong> — +3% per extra chain, up to 4 extra. Wider distribution is worth a little more.</li>
-      <li><strong>Clamps</strong> — every category multiple is kept inside 0.05…1.50 so one outlier cannot run away.</li>
+      <li><strong>Clamps</strong> — every multiple is kept inside 0.05…1.50 so one outlier cannot run away.</li>
     </ul>
     <p class="note">“Records no token” means the snapshot&rsquo;s record carries no market cap, CoinGecko id or
     symbol — it is not proof the protocol has none. Wrapped, staked and bridged products of a token that
     already trades are kept off the board. This is not financial advice and not a prediction of a launch.</p>
-    <h3>Category comparables</h3>
-    <table id="comps"><thead><tr><th>Category</th><th>Live comps</th><th>Median mcap / TVL</th></tr></thead><tbody></tbody></table>
+    <h3>Calibration groups</h3>
+    <table id="comps"><thead><tr><th>Group</th><th>Live comps</th><th>Median mcap / TVL</th><th>Basis</th></tr></thead><tbody></tbody></table>
   </section>
 
   <section class="panel" aria-label="Already trading">

@@ -77,6 +77,9 @@
       return true;
     }).sort(SORTS[state.sort] || SORTS.rank);
   }
+  function compLabel(n) {
+    return n + (n === 1 ? ' comp' : ' comps');
+  }
   function render() {
     var list = filtered();
     $('count').textContent = list.length + ' of ' + rows.length + ' protocols' +
@@ -92,7 +95,7 @@
         '<td class="num">' + money(r.tvl_usd) + '<span class="sub">' + ageText(r.age_days) + '</span></td>' +
         '<td class="num">' + pct(r.change_7d) + '</td>' +
         '<td class="num"><strong>' + money(r.implied_value_usd) + '</strong></td>' +
-        '<td class="num">' + r.category_multiple.toFixed(2) + '×<span class="sub">' + r.category_comps + ' comps</span></td>' +
+        '<td class="num">' + r.category_multiple.toFixed(2) + '×<span class="sub">' + esc(r.multiple_group) + '</span></td>' +
         '</tr>';
     }).join('') || '<tr><td colspan="8">No protocols match these filters.</td></tr>';
   }
@@ -103,6 +106,11 @@
     for (var i = 0; i < rows.length; i++) if (rows[i].slug === slug) { r = rows[i]; break; }
     if (!r) return;
     var base = r.tvl_usd * r.category_multiple;
+    var multNote = r.multiple_source === 'category'
+      ? 'The multiple is the median market-cap / TVL of the ' + r.group_comps + ' live-token protocols in this category, taken from this same snapshot.'
+      : r.multiple_source === 'family'
+        ? 'Its category, ' + (r.category || 'Uncategorised') + ', has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' of its own, so it borrows the median of its family, ' + r.multiple_group + ' (' + compLabel(r.group_comps) + ' live tokens).'
+        : 'Its category has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' and belongs to no family, so it borrows the global median of all ' + compLabel(r.group_comps) + ' live tokens.';
     $('detailBody').innerHTML =
       '<p class="meta">RANK #' + r.rank + ' OF ' + rows.length + (r.watchlist ? ' · ON THE WATCHLIST' : ' · BELOW THE FLOOR') + '</p>' +
       '<h2>' + esc(r.name) + '</h2>' +
@@ -112,20 +120,19 @@
       '<h3>Implied launch value — the maths</h3>' +
       '<table class="math"><tbody>' +
       '<tr><td>TVL</td><td>' + money(r.tvl_usd) + '</td></tr>' +
-      '<tr><td>Category multiple (' + esc(r.category || 'global') + ', ' + r.category_comps + ' comps)</td><td>× ' + r.category_multiple.toFixed(3) + '</td></tr>' +
+      '<tr><td>Multiple (' + esc(r.multiple_group) + ', ' + compLabel(r.group_comps) + ')</td><td>× ' + r.category_multiple.toFixed(3) + '</td></tr>' +
       '<tr><td>Base value (TVL × multiple)</td><td>' + money(base) + '</td></tr>' +
       '<tr><td>Growth multiplier</td><td>× ' + r.growth_multiplier.toFixed(3) + '</td></tr>' +
       '<tr><td>Maturity multiplier</td><td>× ' + r.maturity_multiplier.toFixed(3) + '</td></tr>' +
       '<tr><td>Chain multiplier (' + r.chains.length + ' chain' + (r.chains.length === 1 ? '' : 's') + ')</td><td>× ' + r.chain_multiplier.toFixed(3) + '</td></tr>' +
       '<tr class="total"><td>Implied value</td><td>' + money(r.implied_value_usd) + '</td></tr>' +
       '</tbody></table>' +
-      '<p class="note">The multiple is the median market-cap / TVL of live-token protocols in this category, ' +
-      'taken from this same snapshot. No protocol name is ever special-cased.</p>' +
+      '<p class="note">' + multNote + ' No protocol name is ever special-cased.</p>' +
       '<h3>Farm plan — 8 steps</h3>' +
       '<ol class="steps">' + r.farm_steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
       '<h3>Why it ranks here</h3><p>' + esc(r.name) + ' records no token, holds ' + money(r.tvl_usd) +
       ' of TVL' + (r.change_7d != null ? ' (' + (r.change_7d > 0 ? '+' : '') + r.change_7d.toFixed(1) + '% in 7 days)' : '') +
-      ', and its category trades at a median ' + r.category_multiple.toFixed(2) + '× TVL. ' +
+      ', and ' + esc(r.multiple_group) + ' trades at a median ' + r.category_multiple.toFixed(2) + '× TVL over ' + compLabel(r.group_comps) + '. ' +
       'That combination puts its implied launch value at ' + money(r.implied_value_usd) +
       ', rank #' + r.rank + ' of ' + rows.length + '.</p>';
     $('detail').hidden = false;
@@ -141,13 +148,26 @@
     var tr = e.target.closest('tr[data-slug]');
     if (tr) openDetail(tr.getAttribute('data-slug'));
   });
+  $('rising').querySelector('tbody').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-slug]');
+    if (tr) openDetail(tr.getAttribute('data-slug'));
+  });
   $('close').addEventListener('click', closeDetail);
   $('scrim').addEventListener('click', closeDetail);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
 
   // ---- comparables + live tables -------------------------------------------
   $('comps').querySelector('tbody').innerHTML = comps.map(function (c) {
-    return '<tr><td>' + esc(c.category) + '</td><td class="num">' + c.comps + '</td><td class="num">' + c.median_multiple.toFixed(3) + '×</td></tr>';
+    var basis = c.source === 'category' ? 'own category' : c.source === 'family' ? 'family' : 'global fallback';
+    return '<tr><td>' + esc(c.group) + '</td><td class="num">' + c.comps + '</td><td class="num">' + c.median_multiple.toFixed(3) + '×</td><td>' + basis + '</td></tr>';
+  }).join('');
+  $('rising').querySelector('tbody').innerHTML = R.rising.map(function (x) {
+    return '<tr data-slug="' + esc(x.slug) + '"><td><strong>' + esc(x.name) + '</strong><span class="sub">' + esc(x.slug) + '</span></td>' +
+      '<td>' + esc(x.category || '—') + '</td>' +
+      '<td class="num">' + money(x.tvl_usd) + '</td>' +
+      '<td class="num">' + pct(x.change_7d) + '</td>' +
+      '<td class="num"><strong>' + money(x.implied_value_usd) + '</strong></td>' +
+      '<td class="num">#' + x.rank + '</td></tr>';
   }).join('');
   $('live').querySelector('tbody').innerHTML = live.map(function (p) {
     return '<tr><td><strong>' + esc(p.name) + '</strong><span class="sub">' + esc(p.slug) + '</span></td>' +
@@ -177,6 +197,12 @@
   (function applyHash() {
     var h = location.hash || '';
     if (h.indexOf('#detail=') === 0) { render(); openDetail(h.slice(8)); return; }
+    if (h.indexOf('#section=') === 0) {
+      render();
+      var el = document.getElementById(h.slice(9) + 'Panel');
+      if (el) el.scrollIntoView();
+      return;
+    }
     if (h.indexOf('#filter=') === 0) {
       var f = decodeURIComponent(h.slice(8));
       if (f === 'watchlist') { state.wl = true; $('wl').checked = true; }

@@ -10,11 +10,11 @@ body{margin:0;background:var(--bg);color:var(--text);
 .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
 .top{border-bottom:1px solid var(--line);
   background:radial-gradient(900px 220px at 20% -40px,#123626 0%,transparent 60%),var(--bg)}
-.eyebrow{margin:0;padding:26px 0 0;color:var(--green);letter-spacing:.14em;font-size:12px;font-weight:700}
-h1{margin:6px 0 8px;font-size:44px;line-height:1.05;letter-spacing:-.02em}
-.lede{max-width:760px;color:var(--muted);margin:0 0 22px}
+.eyebrow{margin:0;padding:20px 0 0;color:var(--green);letter-spacing:.14em;font-size:12px;font-weight:700}
+h1{margin:6px 0 8px;font-size:38px;line-height:1.05;letter-spacing:-.02em}
+.lede{max-width:760px;color:var(--muted);margin:0 0 16px}
 .lede strong{color:var(--text)}
-.kpis{display:flex;flex-wrap:wrap;gap:10px;margin:0;padding:0 0 26px;list-style:none}
+.kpis{display:flex;flex-wrap:wrap;gap:10px;margin:0;padding:0 0 20px;list-style:none}
 .kpis div{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 16px;min-width:150px}
 .kpis dt{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .kpis dd{margin:2px 0 0;font-size:22px;font-weight:700}
@@ -37,6 +37,7 @@ thead th[data-k]{cursor:pointer}
 thead th[data-k]:hover{color:var(--green)}
 tbody tr{cursor:pointer}
 tbody tr:hover{background:var(--panel2)}
+#rising tbody tr{cursor:pointer}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 td .sub{display:block;color:var(--faint);font-size:12px}
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:20px;

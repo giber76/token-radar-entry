@@ -1,15 +1,21 @@
-// Token Radar model v2 ("radar-2 comps"): implied launch value calibrated on the
-// snapshot's own live-token protocols, never on a hardcoded list of names.
+// Token Radar model v3 ("radar-3 families"): implied launch value calibrated on
+// the snapshot's own live-token protocols, never on a hardcoded list of names.
 //
 // Idea: a protocol that already trades tells the market what a dollar of TVL is
-// worth in its category. For every category we take the median market-cap / TVL
-// ratio of the snapshot's live-token protocols in that category (at least 3
-// comparables, else the global median), clamp it, and apply it to a pre-token
-// protocol's TVL. Then three adjustments, all from the protocol's own record:
+// worth in its line of business. A category earns its multiple from the median
+// market-cap / TVL of the snapshot's live-token protocols in that category —
+// but only when at least 3 of them trade there. A thinner category borrows the
+// median of its family, a group of categories that do the same kind of work
+// (vaults and curators, lending, trading, staking, bridges, RWA, AI,
+// payments); a category in no family borrows the global median of every live
+// token. That keeps one wild outlier (a single token trading at 400x its TVL)
+// from setting a whole category's multiple, and every multiple the board shows
+// rests on at least 3 live comparables. Then three adjustments, all from the
+// protocol's own record:
 //   growth    — 7-day TVL change, clamped, pulls the value up or down;
 //   maturity  — days since DefiLlama started tracking it, older is more proven;
 //   chains    — each extra chain is wider distribution, worth a little more.
-//   implied = tvl_usd x categoryMultiple x growthMult x maturityMult x chainMult
+//   implied = tvl_usd x multiple x growthMult x maturityMult x chainMult
 //
 // A protocol is pre-token when its record carries no market cap, no CoinGecko id
 // and no symbol. The board ranks every rankable pre-token protocol in the
@@ -68,7 +74,7 @@ export const MODEL: ModelConstants = {
   min_comps: 3,
   multiple_floor: 0.05,
   multiple_cap: 1.5,
-  growth_weight: 0.6,
+  growth_weight: 0.8,
   growth_floor: -50,
   growth_cap: 100,
   maturity_floor: 0.7,
@@ -80,7 +86,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-2 comps';
+export const MODEL_VERSION = 'radar-3 families';
 
 /** A farm step: the action, what it costs, and how long it takes. */
 export interface FarmStep {
@@ -88,6 +94,9 @@ export interface FarmStep {
   cost: string;
   time: string;
 }
+
+/** Where a protocol's multiple comes from: its own category, its family, or the global median. */
+export type MultipleSource = 'category' | 'family' | 'global';
 
 /** One row of board.json: the ranked board's row. */
 export interface BoardRow {
@@ -108,6 +117,9 @@ export interface BoardRow {
   model: {
     category_multiple: number;
     category_comps: number;
+    multiple_source: MultipleSource;
+    multiple_group: string;
+    group_comps: number;
     growth_pct: number;
     growth_multiplier: number;
     maturity_multiplier: number;
@@ -132,6 +144,9 @@ export interface RadarRow {
   implied_value_usd: number;
   category_multiple: number;
   category_comps: number;
+  multiple_source: MultipleSource;
+  multiple_group: string;
+  group_comps: number;
   growth_multiplier: number;
   maturity_multiplier: number;
   chain_multiplier: number;
@@ -151,11 +166,23 @@ export interface LiveRow {
   fdv_tvl: number | null;
 }
 
-/** One category's comparable multiple, for the dashboard's comparables table. */
+/** One calibration group, for the dashboard's comparables table. */
 export interface CompRow {
-  category: string;
+  group: string;
   comps: number;
   median_multiple: number;
+  source: MultipleSource;
+}
+
+/** One fast riser: a board row whose TVL is growing fastest over 7 days. */
+export interface RisingRow {
+  rank: number;
+  slug: string;
+  name: string;
+  category: string | null;
+  tvl_usd: number;
+  change_7d: number;
+  implied_value_usd: number;
 }
 
 /** Everything the dashboard needs: the board, the live set, the comps, the model. */
@@ -172,6 +199,7 @@ export interface RadarData {
   global_multiple: number;
   comps: CompRow[];
   rows: RadarRow[];
+  rising: RisingRow[];
   live: LiveRow[];
 }
 
@@ -240,14 +268,44 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 }
 
 /**
+ * The families: categories grouped by what the protocol does, so a category
+ * with too few live tokens of its own can borrow a median from its neighbours
+ * instead of from the whole market. The groups follow the snapshot's own
+ * category names; nothing here names a protocol.
+ */
+export const FAMILIES: Record<string, string[]> = {
+  'Vaults & Curators': ['Risk Curators', 'Onchain Capital Allocator', 'Yield Aggregator', 'Yield', 'Leveraged Farming', 'Collateral Management'],
+  'Lending & Borrowing': ['Lending', 'CDP'],
+  Trading: ['Dexs', 'Liquidity Manager', 'Derivatives', 'Options', 'Basis Trading'],
+  Staking: ['Liquid Staking', 'Staking Pool', 'Restaking', 'Liquid Restaking'],
+  Bridges: ['Bridge', 'Canonical Bridge', 'Cross Chain Bridge'],
+  'RWA & Tokenization': ['RWA', 'Token Locker'],
+  AI: ['AI Agents', 'Decentralized AI'],
+  'Payments & Chains': ['Payments', 'Chain'],
+};
+
+/** The family a category belongs to, or null when it stands alone. */
+export function familyOf(category: string | null): string | null {
+  if (category === null) return null;
+  for (const [family, members] of Object.entries(FAMILIES)) {
+    if (members.includes(category)) return family;
+  }
+  return null;
+}
+
+/**
  * The comparables: for each category, the median market-cap / TVL of the
  * snapshot's live-token protocols in it (CEX excluded: an exchange's token is
- * not a protocol token). Categories with too few comparables fall back to the
- * global median. Multiples are clamped so one outlier category cannot run away.
+ * not a protocol token), and the same median for each family. A category's
+ * multiple is its own median when at least `min_comps` live tokens trade
+ * there; otherwise its family's median when the family holds that many; else
+ * the global median. Multiples are clamped so one outlier category cannot run
+ * away — a single-token category trading at 400x its TVL never sets a price.
  */
 export interface Comps {
   global: number;
-  byCategory: Map<string, { multiple: number; comps: number }>;
+  globalComps: number;
+  byCategory: Map<string, { multiple: number; comps: number; source: MultipleSource; group: string; groupComps: number }>;
   table: CompRow[];
 }
 
@@ -256,6 +314,7 @@ export function buildComps(snapshot: Snapshot, model: ModelConstants = MODEL): C
     (p) => !isPreToken(p) && p.category !== 'CEX' && p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0,
   );
   const global = median(live.map((p) => p.mcap_usd! / p.tvl_usd));
+  const globalMultiple = Math.min(model.multiple_cap, Math.max(model.multiple_floor, global));
   const perCategory = new Map<string, number[]>();
   for (const p of live) {
     const key = p.category ?? 'Uncategorised';
@@ -263,23 +322,50 @@ export function buildComps(snapshot: Snapshot, model: ModelConstants = MODEL): C
     list.push(p.mcap_usd! / p.tvl_usd);
     perCategory.set(key, list);
   }
-  const byCategory = new Map<string, { multiple: number; comps: number }>();
+  const perFamily = new Map<string, number[]>();
+  for (const [family, members] of Object.entries(FAMILIES)) {
+    const ratios: number[] = [];
+    for (const member of members) {
+      const list = perCategory.get(member);
+      if (list !== undefined) ratios.push(...list);
+    }
+    perFamily.set(family, ratios);
+  }
+  const clamp = (m: number): number => Math.min(model.multiple_cap, Math.max(model.multiple_floor, m));
+  const byCategory = new Map<string, { multiple: number; comps: number; source: MultipleSource; group: string; groupComps: number }>();
   const table: CompRow[] = [];
   for (const [category, ratios] of [...perCategory.entries()].sort((a, b) => b[1].length - a[1].length)) {
-    const m = ratios.length >= model.min_comps ? median(ratios) : global;
-    const multiple = Math.min(model.multiple_cap, Math.max(model.multiple_floor, m));
-    byCategory.set(category, { multiple, comps: ratios.length });
-    table.push({ category, comps: ratios.length, median_multiple: round4(multiple) });
+    if (ratios.length >= model.min_comps) {
+      const multiple = clamp(median(ratios));
+      byCategory.set(category, { multiple, comps: ratios.length, source: 'category', group: category, groupComps: ratios.length });
+      table.push({ group: category, comps: ratios.length, median_multiple: round4(multiple), source: 'category' });
+    } else {
+      const family = familyOf(category);
+      const familyRatios = family === null ? [] : (perFamily.get(family) ?? []);
+      if (family !== null && familyRatios.length >= model.min_comps) {
+        const multiple = clamp(median(familyRatios));
+        byCategory.set(category, { multiple, comps: ratios.length, source: 'family', group: family, groupComps: familyRatios.length });
+      } else {
+        byCategory.set(category, { multiple: globalMultiple, comps: ratios.length, source: 'global', group: 'All live tokens', groupComps: live.length });
+      }
+    }
   }
-  return { global, byCategory, table };
+  for (const [family, ratios] of [...perFamily.entries()].sort((a, b) => b[1].length - a[1].length)) {
+    if (ratios.length >= model.min_comps) {
+      table.push({ group: family, comps: ratios.length, median_multiple: round4(clamp(median(ratios))), source: 'family' });
+    }
+  }
+  table.push({ group: 'All live tokens', comps: live.length, median_multiple: round4(globalMultiple), source: 'global' });
+  table.sort((a, b) => b.comps - a.comps || (a.group < b.group ? -1 : a.group > b.group ? 1 : 0));
+  return { global: globalMultiple, globalComps: live.length, byCategory, table };
 }
 
-/** The category multiple one protocol gets: its own category's, else the global median. */
-export function categoryMultiple(p: SnapshotProtocol, comps: Comps, model: ModelConstants = MODEL): { multiple: number; comps: number } {
+/** The multiple one protocol gets: its own category's, its family's, or the global median. */
+export function resolveMultiple(p: SnapshotProtocol, comps: Comps, model: ModelConstants = MODEL): { multiple: number; comps: number; source: MultipleSource; group: string; groupComps: number } {
   const key = p.category ?? 'Uncategorised';
   const hit = comps.byCategory.get(key);
   if (hit !== undefined) return hit;
-  return { multiple: Math.min(model.multiple_cap, Math.max(model.multiple_floor, comps.global)), comps: 0 };
+  return { multiple: comps.global, comps: 0, source: 'global', group: 'All live tokens', groupComps: comps.globalComps };
 }
 
 /** The multipliers and the implied value one protocol gets under the model. */
@@ -292,6 +378,9 @@ export function impliedValue(
   implied: number;
   multiple: number;
   multipleComps: number;
+  multipleSource: MultipleSource;
+  multipleGroup: string;
+  groupComps: number;
   growthPct: number;
   growthMult: number;
   maturityMult: number;
@@ -299,7 +388,7 @@ export function impliedValue(
   age: number | null;
 } {
   const age = ageDays(asOf, protocol.listed_at);
-  const { multiple, comps: multipleComps } = categoryMultiple(protocol, comps, model);
+  const resolved = resolveMultiple(protocol, comps, model);
   const rawGrowth = finite(protocol.change_7d, 0);
   const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
   const growthMult = 1 + (growthPct / 100) * model.growth_weight;
@@ -307,8 +396,8 @@ export function impliedValue(
   const maturityMult = model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
   const extraChains = Math.min(Math.max(protocol.chains.length - 1, 0), model.chain_cap);
   const chainMult = 1 + extraChains * model.chain_step;
-  const implied = Math.max(1, Math.round(protocol.tvl_usd * multiple * growthMult * maturityMult * chainMult));
-  return { implied, multiple, multipleComps, growthPct, growthMult, maturityMult, chainMult, age };
+  const implied = Math.max(1, Math.round(protocol.tvl_usd * resolved.multiple * growthMult * maturityMult * chainMult));
+  return { implied, multiple: resolved.multiple, multipleComps: resolved.comps, multipleSource: resolved.source, multipleGroup: resolved.group, groupComps: resolved.groupComps, growthPct, growthMult, maturityMult, chainMult, age };
 }
 
 /** The protocols the board ranks, strongest first, with ranks 1..n. */
@@ -352,6 +441,9 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     model: {
       category_multiple: round4(s.multiple),
       category_comps: s.multipleComps,
+      multiple_source: s.multipleSource,
+      multiple_group: s.multipleGroup,
+      group_comps: s.groupComps,
       growth_pct: round4(s.growthPct),
       growth_multiplier: round4(s.growthMult),
       maturity_multiplier: round4(s.maturityMult),
@@ -410,6 +502,10 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
   if (c.includes('insurance')) return `Buy $${capital} of cover from ${name} on ${chain} and keep the policy active for the hold period.`;
   if (c.includes('privacy')) return `Move $${capital} through ${name} on ${chain} in two separate sessions a week apart.`;
   if (c.includes('index')) return `Buy $${capital} of the ${name} index on ${chain} and hold it for the full period.`;
+  if (c.includes('nft') || c.includes('marketplace')) return `List one item and complete one purchase through ${name} on ${chain}, each around $${capital}, so the wallet reads as a real user of the marketplace.`;
+  if (c.includes('launchpad')) return `Commit $${capital} to the next sale ${name} runs on ${chain} and hold the allocation instead of flipping it at listing.`;
+  if (c.includes('payment')) return `Route $${capital} of real payments through ${name} on ${chain} over the hold period, in several transfers rather than one.`;
+  if (c.includes('ai agent') || c.includes('decentralized ai')) return `Deposit $${capital} into ${name} on ${chain} and run one agent task from the same wallet so the position is tied to real use.`;
   return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open.`;
 }
 
@@ -422,13 +518,33 @@ function weeklyFor(p: SnapshotProtocol): string {
   if (c.includes('perpetual') || c.includes('derivative')) return 'a small trade or a funding-fee settlement';
   if (c.includes('staking') || c.includes('restak')) return 'a stake top-up or a rewards claim';
   if (c.includes('prediction')) return 'a new market position or a claim on a resolved one';
+  if (c.includes('nft') || c.includes('marketplace')) return 'a listing, a bid or a purchase';
+  if (c.includes('launchpad')) return 'a sale registration or an allocation claim';
+  if (c.includes('payment')) return 'a payment or a settlement';
   return 'a deposit, a swap, a vote or a claim';
+}
+
+/** A category-specific extra task, for the step that follows the protocol's own programme. */
+function taskFor(p: SnapshotProtocol): string {
+  const c = (p.category ?? '').toLowerCase();
+  if (c.includes('dex')) return 'vote on a fee tier or a pool incentive, or provide liquidity to a newly listed pool';
+  if (c.includes('lend') || c.includes('cdp')) return 'vote on a collateral listing or a rate change, or test a new market the protocol opens';
+  if (c.includes('bridge')) return 'try a route to a chain you have not used yet, or a quest the protocol publishes for it';
+  if (c.includes('perpetual') || c.includes('derivative')) return 'join a trading competition or a testnet market the protocol opens';
+  if (c.includes('staking') || c.includes('restak')) return 'delegate to a new validator set or claim restaking rewards the protocol offers';
+  if (c.includes('prediction')) return 'create a market of your own, or settle one you already hold';
+  if (c.includes('nft') || c.includes('marketplace')) return 'mint from a new collection the protocol lists, or vote on a fee change';
+  if (c.includes('launchpad')) return "register for the next sale early, or complete the project's own quest tasks";
+  if (c.includes('rwa')) return 'subscribe to a new asset the protocol tokenises, or vote on its next listing';
+  return 'complete a quest or a testnet task the protocol publishes';
 }
 
 /**
  * A protocol's farm plan: eight steps, each an action with a cost and a time.
- * The plan is derived from the protocol's own record (category, chains, TVL,
- * age), never from a hand-written list of names.
+ * The plan is derived from the protocol's own record (name, category, chains,
+ * TVL, age), never from a hand-written list of names: the core action, the
+ * weekly rhythm and the follow-up task all change with the category, and every
+ * step names the protocol and the chain it runs on.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
@@ -436,10 +552,11 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const hold = holdDaysFor(age);
   const action = actionFor(p, capital, chain);
   const weekly = weeklyFor(p);
+  const task = taskFor(p);
   const extraChains = p.chains.length > 1 ? ` It also runs on ${p.chains.slice(1, 3).join(' and ')}, so repeat the core step there once with half the capital.` : '';
   return [
     {
-      text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline on paper.`,
+      text: `Use a fresh wallet for ${p.name} that holds only the funds you plan to farm, and keep its seed phrase offline on paper.`,
       cost: 'under $3 of gas for the first transaction',
       time: '5 minutes',
     },
@@ -449,32 +566,32 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: '15 minutes to set up',
     },
     {
-      text: `Do one qualifying action each week, such as ${weekly}, so the wallet shows steady use rather than a single deposit.${extraChains}`,
+      text: `Do one qualifying action each week on ${p.name}, such as ${weekly}, so the wallet shows steady use rather than a single deposit.${extraChains}`,
       cost: 'about $2 of gas a week',
       time: '10 minutes a week',
     },
     {
-      text: `Hold the position for at least ${hold} days so the activity is counted in more than one snapshot.`,
+      text: `Hold the position on ${chain} for at least ${hold} days so the activity is counted in more than one snapshot.`,
       cost: `the $${capital} stays in the position`,
       time: `${hold} days`,
     },
     {
-      text: `Check the protocol's own points, season or rewards page once a week and note the balance it shows for your wallet.`,
+      text: `Check ${p.name}'s own points, season or rewards page once a week and note the balance it shows for your wallet.`,
       cost: 'no fee to check',
       time: '5 minutes a week',
     },
     {
-      text: `If the protocol opens a vote, a quest or a testnet task, complete it from the same wallet.`,
+      text: `If ${p.name} opens a vote, a quest or a testnet task, complete it from the same wallet — for example, ${task}.`,
       cost: 'about $2 of gas per task',
       time: '15 minutes per task',
     },
     {
-      text: `Before you withdraw, open the protocol's own claim page from the link it publishes and claim only there; never pay anyone to claim for you.`,
+      text: `Before you withdraw from ${p.name}, open its own claim page from the link it publishes and claim only there; never pay anyone to claim for you.`,
       cost: 'no fee to check, gas only to claim',
       time: '10 minutes',
     },
     {
-      text: `Write the wallet, the dates and every transaction hash in a farm log, so you can repeat the position or unwind it cleanly.`,
+      text: `Write the wallet, the dates and every transaction hash for ${p.name} in a farm log, so you can repeat the position or unwind it cleanly.`,
       cost: 'nothing but the log',
       time: '5 minutes',
     },
@@ -515,12 +632,32 @@ export function radarRow(row: BoardRow, watchlist: Set<string>): RadarRow {
     implied_value_usd: row.implied_value_usd,
     category_multiple: row.model.category_multiple,
     category_comps: row.model.category_comps,
+    multiple_source: row.model.multiple_source,
+    multiple_group: row.model.multiple_group,
+    group_comps: row.model.group_comps,
     growth_multiplier: row.model.growth_multiplier,
     maturity_multiplier: row.model.maturity_multiplier,
     chain_multiplier: row.model.chain_multiplier,
     watchlist: watchlist.has(row.slug),
     farm_steps: row.farm_steps,
   };
+}
+
+/** The board's fastest growers over 7 days: the early finds, largest first. */
+export function risingRows(board: BoardRow[], count = 5): RisingRow[] {
+  return board
+    .filter((r) => r.change_7d !== null && r.change_7d > 0)
+    .sort((a, b) => (b.change_7d ?? 0) - (a.change_7d ?? 0) || b.tvl_usd - a.tvl_usd)
+    .slice(0, count)
+    .map((r) => ({
+      rank: r.rank,
+      slug: r.slug,
+      name: r.name,
+      category: r.category,
+      tvl_usd: r.tvl_usd,
+      change_7d: r.change_7d ?? 0,
+      implied_value_usd: r.implied_value_usd,
+    }));
 }
 
 /** Everything the dashboard renders, from the snapshot. */
@@ -543,6 +680,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     global_multiple: round4(comps.global),
     comps: comps.table,
     rows: board.map((r) => radarRow(r, watchlist)),
+    rising: risingRows(board),
     live,
   };
   return { board, radar };
