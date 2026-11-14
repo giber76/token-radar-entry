@@ -1,4 +1,4 @@
-// Token Radar model v3 ("radar-3 families"): implied launch value calibrated on
+// Token Radar model v4 ("radar-4 chain-gas"): implied launch value calibrated on
 // the snapshot's own live-token protocols, never on a hardcoded list of names.
 //
 // Idea: a protocol that already trades tells the market what a dollar of TVL is
@@ -16,6 +16,11 @@
 //   maturity  — days since DefiLlama started tracking it, older is more proven;
 //   chains    — each extra chain is wider distribution, worth a little more.
 //   implied = tvl_usd x multiple x growthMult x maturityMult x chainMult
+//
+// The farm plan is priced from the protocol's own record too: gas follows the
+// chain it runs on (Ethereum mainnet dear, Solana cheap, the rest in between),
+// and the hold step reads the protocol's own 7-day TVL move, so a fast grower
+// and a sharp faller get different sizing advice.
 //
 // A protocol is pre-token when its record carries no market cap, no CoinGecko id
 // and no symbol. The board ranks every rankable pre-token protocol in the
@@ -86,7 +91,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-3 families';
+export const MODEL_VERSION = 'radar-4 chain-gas';
 
 /** A farm step: the action, what it costs, and how long it takes. */
 export interface FarmStep {
@@ -456,7 +461,16 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
-/** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
+/** What the protocol's own 7-day TVL move says about sizing the hold: a fast
+ * grower is worth adding to only if the gain holds, a sharp faller is worth a
+ * small first position until the outflow stops. */
+function momentumNote(p: SnapshotProtocol): string {
+  const g = p.change_7d;
+  if (g === null) return '';
+  if (g >= 20) return ` Its TVL is up ${Math.round(g)}% in 7 days, so it is catching a fast grower — add to the position only if the next week's TVL holds the gain.`;
+  if (g <= -10) return ` Its TVL is down ${Math.round(Math.abs(g))}% in 7 days, so keep the first position small and add only if the outflow stops.`;
+  return '';
+}
 export function stepText(step: FarmStep): string {
   let s = `${step.text} Cost: ${step.cost}. Time: ${step.time}.`;
   if (s.length > 600) s = `${s.slice(0, 596)}...`;
@@ -539,6 +553,21 @@ function taskFor(p: SnapshotProtocol): string {
   return 'complete a quest or a testnet task the protocol publishes';
 }
 
+/** What one transaction costs on a chain, from the snapshot's own chain names:
+ * Ethereum mainnet is the expensive one, Solana the cheapest, every other
+ * chain sits in between. The plan prices its gas from the chain it runs on
+ * instead of one flat figure for all 198 protocols. */
+function gasFor(chain: string): { first: string; setup: string; weekly: string; task: string } {
+  const c = chain.toLowerCase();
+  if (c === 'ethereum') {
+    return { first: 'about $15 of gas for the first transaction', setup: 'about $15 of gas', weekly: 'about $5 of gas a week', task: 'about $5 of gas per task' };
+  }
+  if (c === 'solana') {
+    return { first: 'under $1 of gas for the first transaction', setup: 'under $1 of gas', weekly: 'under $1 of gas a week', task: 'under $1 of gas per task' };
+  }
+  return { first: 'about $2 of gas for the first transaction', setup: 'about $2 of gas', weekly: 'about $1 of gas a week', task: 'about $2 of gas per task' };
+}
+
 /**
  * A protocol's farm plan: eight steps, each an action with a cost and a time.
  * The plan is derived from the protocol's own record (name, category, chains,
@@ -553,25 +582,26 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const action = actionFor(p, capital, chain);
   const weekly = weeklyFor(p);
   const task = taskFor(p);
+  const gas = gasFor(chain);
   const extraChains = p.chains.length > 1 ? ` It also runs on ${p.chains.slice(1, 3).join(' and ')}, so repeat the core step there once with half the capital.` : '';
   return [
     {
       text: `Use a fresh wallet for ${p.name} that holds only the funds you plan to farm, and keep its seed phrase offline on paper.`,
-      cost: 'under $3 of gas for the first transaction',
+      cost: gas.first,
       time: '5 minutes',
     },
     {
       text: action,
-      cost: `$${capital} of capital and about $${capital >= 150 ? 8 : 4} of gas`,
+      cost: `$${capital} of capital and ${gas.setup}`,
       time: '15 minutes to set up',
     },
     {
       text: `Do one qualifying action each week on ${p.name}, such as ${weekly}, so the wallet shows steady use rather than a single deposit.${extraChains}`,
-      cost: 'about $2 of gas a week',
+      cost: gas.weekly,
       time: '10 minutes a week',
     },
     {
-      text: `Hold the position on ${chain} for at least ${hold} days so the activity is counted in more than one snapshot.`,
+      text: `Hold the position on ${chain} for at least ${hold} days so the activity is counted in more than one snapshot.${momentumNote(p)}`,
       cost: `the $${capital} stays in the position`,
       time: `${hold} days`,
     },
@@ -582,7 +612,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
     },
     {
       text: `If ${p.name} opens a vote, a quest or a testnet task, complete it from the same wallet — for example, ${task}.`,
-      cost: 'about $2 of gas per task',
+      cost: gas.task,
       time: '15 minutes per task',
     },
     {

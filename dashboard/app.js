@@ -105,23 +105,22 @@
     var r = null;
     for (var i = 0; i < rows.length; i++) if (rows[i].slug === slug) { r = rows[i]; break; }
     if (!r) return;
-    var base = r.tvl_usd * r.category_multiple;
     var multNote = r.multiple_source === 'category'
-      ? 'The multiple is the median market-cap / TVL of the ' + r.group_comps + ' live-token protocols in this category, taken from this same snapshot.'
+      ? 'The multiple is the median market-cap / TVL of the ' + r.group_comps + ' live-token protocols in this category, from this same snapshot.'
       : r.multiple_source === 'family'
-        ? 'Its category, ' + (r.category || 'Uncategorised') + ', has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' of its own, so it borrows the median of its family, ' + r.multiple_group + ' (' + compLabel(r.group_comps) + ' live tokens).'
-        : 'Its category has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' and belongs to no family, so it borrows the global median of all ' + compLabel(r.group_comps) + ' live tokens.';
+        ? (r.category || 'Uncategorised') + ' has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' of its own, so it borrows the ' + r.multiple_group + ' family median (' + compLabel(r.group_comps) + ').'
+        : 'Its category has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' and no family, so it borrows the global median of all ' + compLabel(r.group_comps) + '.';
+    var chainList = r.chains.length > 3 ? r.chains.slice(0, 3).join(', ') + ' +' + (r.chains.length - 3) + ' more' : r.chains.join(', ');
     $('detailBody').innerHTML =
       '<p class="meta">RANK #' + r.rank + ' OF ' + rows.length + (r.watchlist ? ' · ON THE WATCHLIST' : ' · BELOW THE FLOOR') + '</p>' +
       '<h2>' + esc(r.name) + '</h2>' +
-      '<p class="meta">' + esc(r.category || 'Uncategorised') + ' · ' + esc(r.chains.join(', ') || '—') +
+      '<p class="meta">' + esc(r.category || 'Uncategorised') + ' · ' + esc(chainList) +
       ' · tracked since ' + esc(r.listed_at || 'unknown') + ' (' + ageText(r.age_days) + ')' +
       ' · 7-day TVL ' + (r.change_7d == null ? 'n/a' : (r.change_7d > 0 ? '+' : '') + r.change_7d.toFixed(1) + '%') + '</p>' +
       '<h3>Implied launch value — the maths</h3>' +
       '<table class="math"><tbody>' +
       '<tr><td>TVL</td><td>' + money(r.tvl_usd) + '</td></tr>' +
       '<tr><td>Multiple (' + esc(r.multiple_group) + ', ' + compLabel(r.group_comps) + ')</td><td>× ' + r.category_multiple.toFixed(3) + '</td></tr>' +
-      '<tr><td>Base value (TVL × multiple)</td><td>' + money(base) + '</td></tr>' +
       '<tr><td>Growth multiplier</td><td>× ' + r.growth_multiplier.toFixed(3) + '</td></tr>' +
       '<tr><td>Maturity multiplier</td><td>× ' + r.maturity_multiplier.toFixed(3) + '</td></tr>' +
       '<tr><td>Chain multiplier (' + r.chains.length + ' chain' + (r.chains.length === 1 ? '' : 's') + ')</td><td>× ' + r.chain_multiplier.toFixed(3) + '</td></tr>' +
