@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar — pre-token protocols ranked by implied launch value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <p class="eyebrow">DEFI LLAMA SNAPSHOT &middot; <span id="asof">—</span></p>
+    <h1>Token Radar</h1>
+    <p class="lede">Every protocol in the snapshot that <strong>records no token yet</strong>, ranked by what its
+    launch would be worth if its record stayed as it is. The value is this board&rsquo;s own claim,
+    calibrated on the protocols that already trade — not a prediction that a token comes, or when.</p>
+    <dl class="kpis" id="kpis"></dl>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="panel" aria-label="Filters">
+    <div class="filters">
+      <label>Search <input id="q" type="search" placeholder="Protocol name or slug…" autocomplete="off"></label>
+      <label>Category <select id="cat"><option value="">All categories</option></select></label>
+      <label>Chain <select id="chain"><option value="">All chains</option></select></label>
+      <label class="check"><input id="wl" type="checkbox"> Watchlist only</label>
+      <label>Sort <select id="sort">
+        <option value="rank">Implied value ↓</option>
+        <option value="tvl">TVL ↓</option>
+        <option value="growth">7-day growth ↓</option>
+        <option value="age">Age ↓</option>
+        <option value="name">Name A–Z</option>
+      </select></label>
+    </div>
+    <p class="count" id="count" aria-live="polite"></p>
+  </section>
+
+  <section class="panel" aria-label="Ranked board">
+    <table id="board">
+      <thead><tr>
+        <th data-k="rank">#</th><th data-k="name">Protocol</th><th data-k="category">Category</th>
+        <th data-k="chains">Chains</th><th data-k="tvl">TVL</th><th data-k="growth">7d</th>
+        <th data-k="implied">Implied value</th><th>Multiple</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="hint">Click a row for the detail view: the value maths, the farm plan and the comparables behind it.</p>
+  </section>
+
+  <section class="panel" aria-label="How the value is built">
+    <h2>How the implied value is built</h2>
+    <p>Each category earns its multiple from the market itself: the median <em>market-cap / TVL</em> of the
+    snapshot&rsquo;s live-token protocols in that category (at least 3 comparables, otherwise the global median
+    of <strong id="glob">—</strong>). Then:</p>
+    <p class="formula">implied = TVL &times; category&nbsp;multiple &times; growth &times; maturity &times; chains</p>
+    <ul class="model">
+      <li><strong>Growth</strong> — 7-day TVL change, clamped to −50%…+100%, moves value by 60% of the change.</li>
+      <li><strong>Maturity</strong> — 0.70 + 0.30 &times; min(age, 3y) / 3y. Older protocols are more proven; unknown age counts as 1 year.</li>
+      <li><strong>Chains</strong> — +3% per extra chain, up to 4 extra. Wider distribution is worth a little more.</li>
+      <li><strong>Clamps</strong> — every category multiple is kept inside 0.05…1.50 so one outlier cannot run away.</li>
+    </ul>
+    <p class="note">“Records no token” means the snapshot&rsquo;s record carries no market cap, CoinGecko id or
+    symbol — it is not proof the protocol has none. Wrapped, staked and bridged products of a token that
+    already trades are kept off the board. This is not financial advice and not a prediction of a launch.</p>
+    <h3>Category comparables</h3>
+    <table id="comps"><thead><tr><th>Category</th><th>Live comps</th><th>Median mcap / TVL</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="panel" aria-label="Already trading">
+    <h2>Already trading — the comparables</h2>
+    <p>The 24 largest live-token protocols by market cap, at the market&rsquo;s own values. They calibrate the
+    board above; they are never ranked on it.</p>
+    <table id="live"><thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>Market cap</th><th>mcap / TVL</th></tr></thead><tbody></tbody></table>
+  </section>
+</main>
+
+<aside id="detail" class="drawer" aria-label="Protocol detail" hidden>
+  <button id="close" type="button" aria-label="Close detail">✕</button>
+  <div id="detailBody"></div>
+</aside>
+<div id="scrim" hidden></div>
+
+<footer class="wrap"><p id="src"></p></footer>
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
