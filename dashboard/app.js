@@ -6,7 +6,7 @@
   var R = window.RADAR;
   if (!R) { document.body.textContent = 'Token Radar: no data.'; return; }
 
-  var rows = R.rows, live = R.live, comps = R.comps;
+  var rows = R.rows, live = R.live, comps = R.comps, fit = R.fit;
   var $ = function (id) { return document.getElementById(id); };
 
   function esc(s) {
@@ -26,24 +26,77 @@
     var cls = n > 0 ? 'up' : n < 0 ? 'down' : 'flat';
     return '<span class="' + cls + '">' + (n > 0 ? '+' : '') + n.toFixed(1) + '%</span>';
   }
+  function ageShort(days) {
+    if (days == null) return 'n/a';
+    if (days < 30) return days + ' d';
+    if (days < 365) return Math.round(days / 30) + ' mo';
+    return (days / 365).toFixed(1) + ' yr';
+  }
   function ageText(days) {
     if (days == null) return 'age n/a';
     if (days < 30) return days + 'd old';
     if (days < 365) return Math.round(days / 30) + 'mo old';
     return (days / 365).toFixed(1) + 'y old';
   }
+  function mult(n) { return (n == null || !isFinite(n)) ? '—' : n.toFixed(2) + '×'; }
 
   // ---- header facts -------------------------------------------------------
   $('asof').textContent = 'AS OF ' + R.as_of;
-  $('glob').textContent = R.global_multiple.toFixed(3) + '×';
   $('src').textContent = 'Source: ' + R.source + '. Snapshot date ' + R.as_of +
     '. Model ' + R.model_version + '. “Records no token” is the snapshot’s record, not proof a token does not exist.';
   var top = rows[0];
   $('kpis').innerHTML =
-    '<div><dt>Watchlist</dt><dd>' + R.watchlist_size + ' <small>protocols ≥ $50M, no token</small></dd></div>' +
+    '<div><dt>Watchlist</dt><dd>' + R.watchlist_size + ' / ' + R.watchlist_size + ' <small>covered</small></dd></div>' +
     '<div><dt>Board</dt><dd>' + R.board_size + ' <small>ranked rows</small></dd></div>' +
+    '<div><dt>Total implied value</dt><dd>' + money(R.total_implied) + '</dd></div>' +
     '<div><dt>Top implied value</dt><dd>' + money(top.implied_value_usd) + ' <small>' + esc(top.name) + '</small></dd></div>' +
-    '<div><dt>Global multiple</dt><dd>' + R.global_multiple.toFixed(3) + '× <small>median mcap / TVL</small></dd></div>';
+    '<div><dt>Median miss (leave-one-out)</dt><dd>×' + fit.loo_median.toFixed(2) + '</dd></div>';
+  $('counts').innerHTML = '<strong>' + R.board_size + ' ranked</strong> &nbsp;·&nbsp; ' +
+    R.live_token_size + ' token on record &nbsp;·&nbsp; ' + R.set_aside_size + ' set aside &nbsp;·&nbsp; ' +
+    fit.n + ' live tokens set the curve';
+
+  // ---- scatter plot: the size curve, drawn from the fitted model ----------
+  // Log-log: x = log10 TVL ($10K…$10B), y = log10 mcap ($10K…$100B).
+  (function scatter() {
+    var W = 520, H = 135, padL = 50, padB = 24, padT = 8, padR = 10;
+    var x0 = 4, x1 = 10, y0 = 4, y1 = 11;
+    function X(v) { return padL + (v - x0) / (x1 - x0) * (W - padL - padR); }
+    function Y(v) { return H - padB - (v - y0) / (y1 - y0) * (H - padT - padB); }
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Size curve scatter plot">';
+    var ticks = [5, 6, 7, 8, 9, 10];
+    ticks.forEach(function (t, i) {
+      s += '<line x1="' + X(t).toFixed(1) + '" y1="' + Y(y0).toFixed(1) + '" x2="' + X(t).toFixed(1) + '" y2="' + Y(y1).toFixed(1) + '" class="grid"/>';
+      var anchor = i === ticks.length - 1 ? 'end' : 'middle';
+      s += '<text x="' + X(t).toFixed(1) + '" y="' + (H - 6) + '" class="tick" text-anchor="' + anchor + '">$' + (t === 5 ? '100K' : t === 6 ? '1M' : t === 7 ? '10M' : t === 8 ? '100M' : t === 9 ? '1B' : '10B') + '</text>';
+    });
+    [5, 6, 7, 8, 9, 10, 11].forEach(function (t) {
+      s += '<line x1="' + X(x0).toFixed(1) + '" y1="' + Y(t).toFixed(1) + '" x2="' + X(x1).toFixed(1) + '" y2="' + Y(t).toFixed(1) + '" class="grid"/>';
+      s += '<text x="2" y="' + (Y(t) + 3).toFixed(1) + '" class="tick" text-anchor="start">$' + (t === 5 ? '100K' : t === 6 ? '1M' : t === 7 ? '10M' : t === 8 ? '100M' : t === 9 ? '1B' : t === 10 ? '10B' : '100B') + '</text>';
+    });
+    R.scatter.forEach(function (p) {
+      s += '<circle cx="' + X(p.x).toFixed(1) + '" cy="' + Y(p.y).toFixed(1) + '" r="1.9" class="dot"><title>' + esc(p.name) + '</title></circle>';
+    });
+    var fx0 = X(x0), fy0 = Y(fit.intercept + fit.elasticity * x0);
+    var fx1 = X(x1), fy1 = Y(fit.intercept + fit.elasticity * x1);
+    s += '<line x1="' + fx0.toFixed(1) + '" y1="' + fy0.toFixed(1) + '" x2="' + fx1.toFixed(1) + '" y2="' + fy1.toFixed(1) + '" class="fitline"/>';
+    s += '</svg>';
+    $('scatter').innerHTML = s;
+    $('scatterNote').textContent = fit.n + ' comparables · elasticity ' + fit.elasticity.toFixed(2) +
+      ' · half land within ×' + Math.pow(10, fit.resid_p25).toFixed(2) + ' to ×' + Math.pow(10, fit.resid_p75).toFixed(2) +
+      ' of the line · R² ' + fit.r2.toFixed(2);
+  })();
+  $('formula').textContent = 'value = 10^' + fit.intercept.toFixed(2) + ' × TVL^' + fit.elasticity.toFixed(2) +
+    ' × category × seasoning × momentum';
+  $('modelList').innerHTML =
+    '<li><strong>Base</strong> — the size curve: 10^' + fit.intercept.toFixed(2) + ' × TVL^' + fit.elasticity.toFixed(2) +
+    ', fitted on ' + fit.n + ' live tokens (R² ' + fit.r2.toFixed(2) + ').</li>' +
+    '<li><strong>Category</strong> — the median residual of the protocol’s category off the line, shrunk ' +
+    'toward 1 when thin; a thin category borrows its family median.</li>' +
+    '<li><strong>Seasoning · Momentum · Breadth</strong> — age 0.70–1.00 over 3y; 7-day change at 80%, ' +
+    'clamped −50%…+100%; +3% per extra chain, up to 4.</li>' +
+    '<li><strong>Band</strong> — every value carries the curve’s middle-half band (×' +
+    Math.pow(10, fit.resid_p25).toFixed(2) + '…×' + Math.pow(10, fit.resid_p75).toFixed(2) + '); ' +
+    'leave-one-out median miss ×' + fit.loo_median.toFixed(2) + '.</li>';
 
   // ---- filter options -----------------------------------------------------
   var cats = [], chains = [];
@@ -80,24 +133,39 @@
   function compLabel(n) {
     return n + (n === 1 ? ' comp' : ' comps');
   }
+  // Implied-value dot plot on a log scale ($10K…$100M): band + point.
+  function dotPlot(r) {
+    var lo = 4, hi = 8, W = 104, H = 16;
+    function X(v) { return Math.max(0, Math.min(W, (Math.log10(Math.max(v, 1e4)) - lo) / (hi - lo) * W)); }
+    var x1 = X(r.band_low), x2 = X(r.band_high), xd = X(r.implied_value_usd);
+    return '<svg class="dotplot" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' +
+      '<line x1="0" y1="8" x2="' + W + '" y2="8" class="track"/>' +
+      '<line x1="' + x1.toFixed(1) + '" y1="8" x2="' + x2.toFixed(1) + '" y2="8" class="band"/>' +
+      '<circle cx="' + xd.toFixed(1) + '" cy="8" r="3.4" class="dot"/>' +
+      '</svg>';
+  }
   function render() {
     var list = filtered();
     $('count').textContent = list.length + ' of ' + rows.length + ' protocols' +
       (state.wl ? ' · watchlist only' : '') + (state.cat ? ' · ' + state.cat : '') +
       (state.chain ? ' · ' + state.chain : '');
     $('rows').innerHTML = list.map(function (r) {
+      var slice = r.implied_value_usd * 0.10 * 1000 / r.tvl_usd;
       return '<tr data-slug="' + esc(r.slug) + '">' +
         '<td class="num">' + r.rank + '</td>' +
         '<td><strong>' + esc(r.name) + '</strong>' +
         '<span class="sub">' + esc(r.slug) + (r.watchlist ? '<span class="badge">WATCHLIST</span>' : '') + '</span></td>' +
-        '<td>' + esc(r.category || '—') + '</td>' +
-        '<td>' + esc(r.chains.slice(0, 3).join(', ')) + (r.chains.length > 3 ? ' +' + (r.chains.length - 3) : '') + '</td>' +
-        '<td class="num">' + money(r.tvl_usd) + '<span class="sub">' + ageText(r.age_days) + '</span></td>' +
+        '<td class="num">' + money(r.tvl_usd) + '</td>' +
         '<td class="num">' + pct(r.change_7d) + '</td>' +
-        '<td class="num"><strong>' + money(r.implied_value_usd) + '</strong></td>' +
-        '<td class="num">' + r.category_multiple.toFixed(2) + '×<span class="sub">' + esc(r.multiple_group) + '</span></td>' +
+        '<td class="num">' + ageShort(r.age_days) + '</td>' +
+        '<td class="num">' + dotPlot(r) + '<strong>' + money(r.implied_value_usd) + '</strong>' +
+        '<span class="sub">' + money(r.band_low) + '–' + money(r.band_high) + '</span></td>' +
+        '<td class="num">' + mult(r.implied_value_usd / r.tvl_usd) + '</td>' +
+        '<td class="num">' + money(slice) + '</td>' +
+        '<td>' + esc(r.farm_brief.verb) + ' · ' + esc(r.farm_brief.chain) +
+        '<span class="sub">' + esc(r.farm_brief.fee) + ' · ' + esc(r.farm_brief.time) + '</span></td>' +
         '</tr>';
-    }).join('') || '<tr><td colspan="8">No protocols match these filters.</td></tr>';
+    }).join('') || '<tr><td colspan="9">No protocols match these filters.</td></tr>';
   }
 
   // ---- detail view ----------------------------------------------------------
@@ -105,12 +173,21 @@
     var r = null;
     for (var i = 0; i < rows.length; i++) if (rows[i].slug === slug) { r = rows[i]; break; }
     if (!r) return;
-    var multNote = r.multiple_source === 'category'
-      ? 'The multiple is the median market-cap / TVL of the ' + r.group_comps + ' live-token protocols in this category, from this same snapshot.'
+    var factorNote = r.multiple_source === 'category'
+      ? 'The factor is the median residual of the ' + r.group_comps + ' live-token protocols in this category, off the size curve, shrunk toward 1.'
       : r.multiple_source === 'family'
-        ? (r.category || 'Uncategorised') + ' has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' of its own, so it borrows the ' + r.multiple_group + ' family median (' + compLabel(r.group_comps) + ').'
-        : 'Its category has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' and no family, so it borrows the global median of all ' + compLabel(r.group_comps) + '.';
+        ? (r.category || 'Uncategorised') + ' has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' of its own, so it borrows the ' + r.multiple_group + ' family median residual (' + compLabel(r.group_comps) + ').'
+        : 'Its category has only ' + r.category_comps + ' live token' + (r.category_comps === 1 ? '' : 's') + ' and no family, so it is priced off the bare size curve.';
     var chainList = r.chains.length > 3 ? r.chains.slice(0, 3).join(', ') + ' +' + (r.chains.length - 3) + ' more' : r.chains.join(', ');
+    var peers = r.family_peers.length > 0
+      ? '<h3>Family comparables — the same line of work, at the market&rsquo;s own values</h3>' +
+        '<table class="math"><thead><tr><th>Protocol</th><th>TVL</th><th>Market cap</th><th>mcap / TVL</th></tr></thead><tbody>' +
+        r.family_peers.map(function (p) {
+          return '<tr><td>' + esc(p.name) + '</td><td class="num">' + money(p.tvl_usd) + '</td><td class="num">' + money(p.mcap_usd) + '</td><td class="num">' + mult(p.multiple) + '</td></tr>';
+        }).join('') + '</tbody></table>' +
+        '<p class="note">These live tokens set the ' + esc(r.multiple_group) + ' factor of ×' + r.category_factor.toFixed(2) +
+        ' used above. No protocol name is ever special-cased.</p>'
+      : '<p class="note">No live-token peer in this category or family trades on the snapshot.</p>';
     $('detailBody').innerHTML =
       '<p class="meta">RANK #' + r.rank + ' OF ' + rows.length + (r.watchlist ? ' · ON THE WATCHLIST' : ' · BELOW THE FLOOR') + '</p>' +
       '<h2>' + esc(r.name) + '</h2>' +
@@ -119,19 +196,21 @@
       ' · 7-day TVL ' + (r.change_7d == null ? 'n/a' : (r.change_7d > 0 ? '+' : '') + r.change_7d.toFixed(1) + '%') + '</p>' +
       '<h3>Implied launch value — the maths</h3>' +
       '<table class="math"><tbody>' +
-      '<tr><td>TVL</td><td>' + money(r.tvl_usd) + '</td></tr>' +
-      '<tr><td>Multiple (' + esc(r.multiple_group) + ', ' + compLabel(r.group_comps) + ')</td><td>× ' + r.category_multiple.toFixed(3) + '</td></tr>' +
+      '<tr><td>Size-curve base (10^' + fit.intercept.toFixed(2) + ' × TVL^' + fit.elasticity.toFixed(2) + ')</td><td>' + money(r.base_value) + '</td></tr>' +
+      '<tr><td>Category factor (' + esc(r.multiple_group) + ', ' + compLabel(r.group_comps) + ')</td><td>× ' + r.category_factor.toFixed(3) + '</td></tr>' +
       '<tr><td>Growth multiplier</td><td>× ' + r.growth_multiplier.toFixed(3) + '</td></tr>' +
       '<tr><td>Maturity multiplier</td><td>× ' + r.maturity_multiplier.toFixed(3) + '</td></tr>' +
       '<tr><td>Chain multiplier (' + r.chains.length + ' chain' + (r.chains.length === 1 ? '' : 's') + ')</td><td>× ' + r.chain_multiplier.toFixed(3) + '</td></tr>' +
       '<tr class="total"><td>Implied value</td><td>' + money(r.implied_value_usd) + '</td></tr>' +
+      '<tr><td>Middle-half band</td><td>' + money(r.band_low) + ' – ' + money(r.band_high) + '</td></tr>' +
       '</tbody></table>' +
-      '<p class="note">' + multNote + ' No protocol name is ever special-cased.</p>' +
+      '<p class="note">' + factorNote + '</p>' +
+      peers +
       '<h3>Farm plan — 8 steps</h3>' +
       '<ol class="steps">' + r.farm_steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
       '<h3>Why it ranks here</h3><p>' + esc(r.name) + ' records no token, holds ' + money(r.tvl_usd) +
       ' of TVL' + (r.change_7d != null ? ' (' + (r.change_7d > 0 ? '+' : '') + r.change_7d.toFixed(1) + '% in 7 days)' : '') +
-      ', and ' + esc(r.multiple_group) + ' trades at a median ' + r.category_multiple.toFixed(2) + '× TVL over ' + compLabel(r.group_comps) + '. ' +
+      ', and ' + esc(r.multiple_group) + ' trades at a factor of ×' + r.category_factor.toFixed(2) + ' off the size curve over ' + compLabel(r.group_comps) + '. ' +
       'That combination puts its implied launch value at ' + money(r.implied_value_usd) +
       ', rank #' + r.rank + ' of ' + rows.length + '.</p>';
     $('detail').hidden = false;
@@ -155,9 +234,9 @@
   $('scrim').addEventListener('click', closeDetail);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
 
-  // ---- comparables + live tables -------------------------------------------
+  // ---- comparables + live + set-aside tables -------------------------------
   $('comps').querySelector('tbody').innerHTML = comps.map(function (c) {
-    var basis = c.source === 'category' ? 'own category' : c.source === 'family' ? 'family' : 'global fallback';
+    var basis = c.source === 'category' ? 'own category' : c.source === 'family' ? 'family' : 'bare curve';
     return '<tr><td>' + esc(c.group) + '</td><td class="num">' + c.comps + '</td><td class="num">' + c.median_multiple.toFixed(3) + '×</td><td>' + basis + '</td></tr>';
   }).join('');
   $('rising').querySelector('tbody').innerHTML = R.rising.map(function (x) {
@@ -174,6 +253,12 @@
       '<td class="num">' + money(p.tvl_usd) + '</td>' +
       '<td class="num">' + money(p.mcap_usd) + '</td>' +
       '<td class="num">' + (p.fdv_tvl == null ? '—' : p.fdv_tvl.toFixed(2) + '×') + '</td></tr>';
+  }).join('');
+  $('setaside').querySelector('tbody').innerHTML = R.set_aside.map(function (p) {
+    return '<tr><td><strong>' + esc(p.name) + '</strong><span class="sub">' + esc(p.slug) + '</span></td>' +
+      '<td>' + esc(p.category || '—') + '</td>' +
+      '<td class="num">' + money(p.tvl_usd) + '</td>' +
+      '<td>' + esc(p.reason) + '</td></tr>';
   }).join('');
 
   // ---- wiring ----------------------------------------------------------------

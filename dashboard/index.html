@@ -3,22 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Radar — pre-token protocols ranked by implied launch value</title>
+<title>Token Radar — 198 pre-token protocols priced off the snapshot's own live tokens</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <p class="eyebrow">DEFI LLAMA SNAPSHOT &middot; <span id="asof">—</span></p>
-    <h1>Token Radar</h1>
-    <p class="lede">Every protocol in the snapshot that <strong>records no token yet</strong>, ranked by what its
-    launch would be worth if its record stayed as it is. The value is this board&rsquo;s own claim,
-    calibrated on the protocols that already trade — not a prediction that a token comes, or when.</p>
+    <p class="eyebrow">TOKEN LAUNCH RADAR &middot; DEFI LLAMA SNAPSHOT &middot; <span id="asof">—</span></p>
+    <h1>198 protocols record no token. Here is what each launch would be worth.</h1>
+    <p class="lede">Every value is read off the snapshot&rsquo;s own live tokens: a size curve, a category
+    factor, seasoning and one more week of momentum.</p>
     <dl class="kpis" id="kpis"></dl>
+    <p class="counts" id="counts"></p>
   </div>
 </header>
 
 <main class="wrap">
+  <section class="panel method" aria-label="How a launch is priced">
+    <div class="method-grid">
+      <div>
+        <h2>How a launch is priced</h2>
+        <div id="scatter"></div>
+        <p class="scatter-note" id="scatterNote"></p>
+      </div>
+      <div>
+        <h2>How a row is valued</h2>
+        <p class="formula" id="formula"></p>
+        <ul class="model" id="modelList"></ul>
+      </div>
+    </div>
+  </section>
+
   <section class="panel" aria-label="Filters">
     <div class="filters">
       <label>Search <input id="q" type="search" placeholder="Protocol name or slug…" autocomplete="off"></label>
@@ -39,13 +54,15 @@
   <section class="panel" aria-label="Ranked board">
     <table id="board">
       <thead><tr>
-        <th data-k="rank">#</th><th data-k="name">Protocol</th><th data-k="category">Category</th>
-        <th data-k="chains">Chains</th><th data-k="tvl">TVL</th><th data-k="growth">7d</th>
-        <th data-k="implied">Implied value</th><th>Multiple</th>
+        <th data-k="rank">#</th><th data-k="name">Protocol</th>
+        <th data-k="tvl">TVL</th><th data-k="growth">7d</th><th>No token for</th>
+        <th data-k="implied">Implied value</th><th>&times; TVL</th><th>Slice / $1k</th><th>Farm &middot; fees &middot; setup</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
-    <p class="hint">Click a row for the detail view: the value maths, the farm plan and the comparables behind it.</p>
+    <p class="hint">Dot: this radar&rsquo;s estimate. Bar: the middle half of live tokens&rsquo; misses around the
+    curve. Slice / $1k: what $1,000 staked would hold if depositors got 10% pro rata. Click a row for
+    the detail view: the value maths, the family comparables and the 8 farm steps.</p>
   </section>
 
   <section class="panel" id="risingPanel" aria-label="Rising fast">
@@ -59,24 +76,24 @@
 
   <section class="panel" id="modelPanel" aria-label="How the value is built">
     <h2>How the implied value is built</h2>
-    <p>Each protocol earns its multiple from the market itself: the median <em>market-cap / TVL</em> of the
-    snapshot&rsquo;s live-token protocols. A category uses its own median when at least 3 live tokens trade
-    there; a thinner category borrows the median of its <strong>family</strong> — categories grouped by what
-    they do (vaults and curators, lending, trading, staking, bridges, RWA, AI, payments) — and a category
-    in no family borrows the global median of all <strong id="glob">—</strong> live tokens. Every multiple on
-    this board rests on at least 3 live comparables, so one wild outlier never sets a price. Then:</p>
-    <p class="formula">implied = TVL &times; multiple &times; growth &times; maturity &times; chains</p>
+    <p>Each protocol is priced off the market itself. First the size curve: the least-squares line
+    through the snapshot&rsquo;s live-token protocols, log market cap on log TVL — a small protocol&rsquo;s
+    token trades at a far higher multiple of its TVL than a giant&rsquo;s, so a flat multiple would
+    overprice the giants and underprice the small ones. Then the category factor: the median
+    residual of the protocol&rsquo;s own category off that line, shrunk toward 1 when the category is
+    thin — a category uses its own median when at least 3 live tokens trade there; a thinner
+    category borrows the median of its <strong>family</strong> — categories grouped by what they do
+    (vaults and curators, lending, trading, staking, bridges, RWA, AI, payments) — and a category
+    in no family is priced off the bare curve. Every factor on this board rests on at least 3 live
+    comparables, so one wild outlier never sets a price. Then:</p>
     <ul class="model">
       <li><strong>Growth</strong> — 7-day TVL change, clamped to −50%…+100%, moves value by 80% of the change.</li>
       <li><strong>Maturity</strong> — 0.70 + 0.30 &times; min(age, 3y) / 3y. Older protocols are more proven; unknown age counts as 1 year.</li>
       <li><strong>Chains</strong> — +3% per extra chain, up to 4 extra. Wider distribution is worth a little more.</li>
-      <li><strong>Clamps</strong> — every multiple is kept inside 0.05…1.50 so one outlier cannot run away.</li>
+      <li><strong>Band</strong> — the middle half of the live tokens land within the curve&rsquo;s residual P25…P75, so every row shows that band beside its point value.</li>
     </ul>
-    <p class="note">“Records no token” means the snapshot&rsquo;s record carries no market cap, CoinGecko id or
-    symbol — it is not proof the protocol has none. Wrapped, staked and bridged products of a token that
-    already trades are kept off the board. This is not financial advice and not a prediction of a launch.</p>
     <h3>Calibration groups</h3>
-    <table id="comps"><thead><tr><th>Group</th><th>Live comps</th><th>Median mcap / TVL</th><th>Basis</th></tr></thead><tbody></tbody></table>
+    <table id="comps"><thead><tr><th>Group</th><th>Live comps</th><th>Category factor</th><th>Basis</th></tr></thead><tbody></tbody></table>
   </section>
 
   <section class="panel" aria-label="Already trading">
@@ -84,6 +101,13 @@
     <p>The 24 largest live-token protocols by market cap, at the market&rsquo;s own values. They calibrate the
     board above; they are never ranked on it.</p>
     <table id="live"><thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>Market cap</th><th>mcap / TVL</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="panel" aria-label="Set aside">
+    <h2>Set aside — the rule leaves these out</h2>
+    <p>The house rule keeps wrapped, staked and bridged products of a token that already trades off
+    the board, along with versioned names and exchange names. The 24 largest of them, by TVL.</p>
+    <table id="setaside"><thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>Why set aside</th></tr></thead><tbody></tbody></table>
   </section>
 </main>
 
