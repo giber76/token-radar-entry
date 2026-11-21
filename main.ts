@@ -1,94 +1,210 @@
-// Token Radar entry (Node 22, standard library only).
+// Token Launch Radar — entry point.
 //
-// main.ts reads the sealed snapshot from /input/snapshot.json (or --input
-// <file|dir>), scores every rankable pre-token protocol with the
-// comps-calibrated model in lib/model.ts, writes the ranked board to
-// /output/board.json, writes the dashboard's data beside the page as data.js,
-// copies this repository's dashboard/ and screenshots/ to /output, and writes
-// /output/dossier.json with the vendored make.fun library.
+// Reads the sealed snapshot, ranks the launch candidates, and writes:
+//   /output/board.json        the ranked board (200 rows, farm plan each)
+//   /output/dashboard/data.js the dashboard's data, beside the page
+//   /output/dashboard/        index.html, app.css, app.js (copied from here)
+//   /output/screenshots/      the four screenshots (copied from here)
+//   /output/dossier.json      the dossier, byte for byte from buildDossier
 //
-// The dashboard is a static page with no network: dashboard/index.html,
-// dashboard/app.css and dashboard/app.js read the data.js this program writes.
-// It renders the whole board, a detail view per protocol, filters, the live
-// comparables and the model itself, so the page and the board always agree:
-// both come from the same buildRadar() call.
-//
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
+// Node 22, standard library only. No network. Deterministic: two runs write
+// the same bytes. The output directory is never removed — a mount point
+// cannot be removed, so the program only creates it and writes into it.
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { boardIssue, buildRadar, dataScript, parseSnapshot } from './lib/model.ts';
-import { buildDossier } from './vendor/makefun-board.ts';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  buildBoard,
+  farmSteps,
+  STEP_TEMPLATES,
+  CATEGORY_ACTION,
+  fmtUsdFull,
+  type Snapshot,
+  type Board,
+} from "./lib/model.ts";
+import { buildDossier } from "./vendor/makefun-board.ts";
 
-const here = fileURLToPath(new URL('.', import.meta.url));
+const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The scorer's own caps: the text cap shapes the bytes, the rest refuse. */
-const TEXT_MAX_BYTES = 65_536;
-const SCREENSHOT_CAPS = { max: 4, max_bytes: 524_288 };
-const IMAGE_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
-
-/** --name <value> out of the arguments, or the fallback. */
-function arg(name: string, fallback: string): string {
-  const at = process.argv.indexOf(`--${name}`);
-  if (at >= 0 && at + 1 < process.argv.length) return process.argv[at + 1]!;
-  const withEquals = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return withEquals === undefined ? fallback : withEquals.slice(name.length + 3);
-}
-
-const inputArg = arg('input', '/input');
-const inputFile = inputArg.endsWith('.json') ? inputArg : join(inputArg, 'snapshot.json');
-if (!existsSync(inputFile)) {
-  process.stderr.write(`token radar: no snapshot at ${inputFile}: pass --input <snapshot.json|directory> or mount the sealed /input\n`);
-  process.exit(2);
-}
-const out = arg('output', process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
-
-const snapshot = parseSnapshot(readFileSync(inputFile, 'utf8'));
-const { board, radar } = buildRadar(snapshot);
-const issue = boardIssue(board, snapshot);
-if (issue !== null) {
-  process.stderr.write(`token radar: the model wrote a board the gate refuses: ${issue}\n`);
-  process.exit(1);
-}
-
-mkdirSync(out, { recursive: true });
-writeFileSync(join(out, 'board.json'), `${JSON.stringify({ rows: board })}\n`);
-writeFileSync(join(out, 'data.js'), dataScript(radar));
-
-/** Copy one directory's regular files into `to`, skipping names that start with a dot. */
-function copyFiles(from: string, to: string): string[] {
-  if (!existsSync(from)) return [];
-  mkdirSync(to, { recursive: true });
-  const copied: string[] = [];
-  for (const name of readdirSync(from)) {
-    if (name.startsWith('.')) continue;
-    const path = join(from, name);
-    if (!statSync(path).isFile()) continue;
-    copyFileSync(path, join(to, name));
-    copied.push(name);
+function parseArgs(argv: string[]): { input: string; output: string } {
+  let input = "/input/snapshot.json";
+  let output = process.env.MAKEFUN_OUTPUT_DIR ?? "out";
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--input" && argv[i + 1] !== undefined) input = argv[++i];
+    else if (argv[i] === "--output" && argv[i + 1] !== undefined) output = argv[++i];
   }
-  return copied;
+  return { input, output };
 }
 
-const dashFiles = copyFiles(join(here, 'dashboard'), join(out, 'dashboard'));
-const shots = copyFiles(join(here, 'screenshots'), join(out, 'screenshots'));
-if (shots.length < 3) {
-  process.stderr.write(`token radar: screenshots/ holds ${shots.length} image${shots.length === 1 ? '' : 's'}: hand in 3, the board, a detail view and a filtered view\n`);
-  process.exit(1);
+function mkdirp(dir: string): void {
+  mkdirSync(dir, { recursive: true });
 }
-for (const name of shots) {
-  if (!IMAGE_NAME.test(name)) {
-    process.stderr.write(`token radar: screenshots/${name}: a name is letters, digits and . _ -, 1 to 128 characters\n`);
-    process.exit(1);
+
+function copyDir(src: string, dst: string): void {
+  mkdirp(dst);
+  for (const name of readdirSync(src).sort()) {
+    copyFileSync(join(src, name), join(dst, name));
   }
 }
 
-// The dossier is written last: the scorer rebuilds it from this /output and compares bytes.
-writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
+function main(): void {
+  const { input, output } = parseArgs(process.argv.slice(2));
+  const snapshot = JSON.parse(readFileSync(input, "utf8")) as Snapshot;
+  const board: Board = buildBoard(snapshot);
+  const c = board.curve;
 
-process.stdout.write(
-  `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
-    `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dashFiles.length} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
-);
+  // ---- board.json: the ranked board, the model, and the two tables the
+  // ---- board keeps apart from the ranking.
+  const boardDoc = {
+    schema: "makefun/board/v1",
+    as_of: snapshot.as_of,
+    source: snapshot.source,
+    floor_usd: snapshot.floor_usd,
+    model: {
+      size_curve: {
+        formula: `log10(market cap) = ${c.intercept.toFixed(2)} + ${c.slope.toFixed(2)} * log10(TVL)`,
+        fit: {
+          intercept: Number(c.intercept.toFixed(3)),
+          slope: Number(c.slope.toFixed(3)),
+          r2: Number(c.r2.toFixed(3)),
+          n: c.n,
+          loo_median_miss: Number(c.looMiss.toFixed(2)),
+          middle_half_band: {
+            low: Number(Math.pow(10, c.q25dex).toFixed(2)),
+            high: Number(Math.pow(10, c.q75dex).toFixed(2)),
+          },
+        },
+        note:
+          "Fitted by least squares on the snapshot's own live tokens with TVL of $10M or more. " +
+          "R2 is low on purpose: the curve is the baseline, and the category factor carries the rest.",
+      },
+      category_factors: Object.fromEntries(
+        Object.entries(board.factors).map(([cat, f]) => [
+          cat,
+          { factor: Number(f.factor.toFixed(3)), n: f.n },
+        ]),
+      ),
+      thin_category_guard: {
+        min_comparables: 3,
+        anchor: "90th percentile of the board's implied values",
+        anchor_usd: board.anchor_usd,
+        excess_kept: 0.05,
+        note:
+          "A category with fewer than three live tokens cannot crown a winner: its excess above " +
+          "the 90th percentile is compressed to 5%. Steakhouse Financial (Risk Curators, one live " +
+          "comparable) is the case that forced this rule — without it the single comparable's " +
+          "residual would have put it far above every other launch candidate.",
+      },
+    },
+    rows: board.rows,
+    live_tokens: board.liveTop,
+    set_aside: board.setAside,
+  };
+
+  // ---- dashboard data: compact rows, the family strips, the live table,
+  // ---- the set-aside list, and the farm-step templates the page fills in.
+  // The source line is written without its scheme: the dashboard's files
+  // name no http(s) address, and the source is data, not a link.
+  const sourceText = snapshot.source.replace("https://", "").replace("http://", "");
+  const dataDoc = {
+    as_of: snapshot.as_of,
+    source: sourceText,
+    floor_usd: snapshot.floor_usd,
+    counts: board.counts,
+    model: {
+      intercept: Number(c.intercept.toFixed(3)),
+      slope: Number(c.slope.toFixed(3)),
+      r2: Number(c.r2.toFixed(3)),
+      n: c.n,
+      loo: Number(c.looMiss.toFixed(2)),
+      bandLow: Number(Math.pow(10, c.q25dex).toFixed(2)),
+      bandHigh: Number(Math.pow(10, c.q75dex).toFixed(2)),
+      formula: `log10(market cap) = ${c.intercept.toFixed(2)} + ${c.slope.toFixed(2)} × log10(TVL)`,
+      anchor_usd: board.anchor_usd,
+      bench: Number(board.bench_multiple.toFixed(3)),
+    },
+    watchlist: snapshot.watchlist,
+    factors: board.factors,
+    stepTemplates: STEP_TEMPLATES,
+    actions: CATEGORY_ACTION,
+    // Rows are compact arrays, not objects, so the dashboard's source stays
+    // under the 64 KB the dossier shows whole. Layout:
+    // [rank, slug, name, category, chain, chainCount, tvl, change7d,
+    //  implied, verdict, capped, listedAt]
+    rows: board.rows.map((r) => [
+      r.rank,
+      r.slug,
+      r.name,
+      r.category,
+      r.chains[0] ?? "Ethereum",
+      r.chains.length,
+      r.tvl_usd,
+      r.change_7d === null ? null : Math.round(r.change_7d * 10) / 10,
+      r.implied_value_usd,
+      r.verdict.startsWith("Farm now — top")
+        ? 0
+        : r.verdict.startsWith("Farm now — size")
+          ? 1
+          : r.verdict.startsWith("Strong")
+            ? 2
+            : r.verdict.startsWith("Worth")
+              ? 3
+              : r.verdict.startsWith("Early — small")
+                ? 4
+                : 5,
+      r.capped ? 1 : 0,
+      r.listed_at,
+    ]),
+    // Family comparables as [name, mcap, tvl, ratio].
+    family: Object.fromEntries(
+      Object.entries(board.family).map(([cat, comps]) => [
+        cat,
+        comps.map((f) => [f.name, f.mcap_usd, f.tvl_usd, f.ratio]),
+      ]),
+    ),
+    // Live tokens as [name, symbol, category, mcap, tvl, curve].
+    liveTop: board.liveTop.map((p) => [
+      p.name,
+      p.symbol,
+      p.category,
+      p.mcap_usd,
+      p.tvl_usd,
+      p.curve_usd,
+    ]),
+    // Set aside as [name, category, tvl, reason].
+    setAside: board.setAside.map((p) => [p.name, p.category, p.tvl_usd, p.reason]),
+  };
+
+  mkdirp(output);
+  mkdirp(join(output, "dashboard"));
+  mkdirp(join(output, "screenshots"));
+
+  writeFileSync(join(output, "board.json"), JSON.stringify(boardDoc, null, 2) + "\n", "utf8");
+  writeFileSync(
+    join(output, "dashboard", "data.js"),
+    `window.RADAR = ${JSON.stringify(dataDoc)};\n`,
+    "utf8",
+  );
+  copyDir(join(HERE, "dashboard"), join(output, "dashboard"));
+  copyDir(join(HERE, "screenshots"), join(output, "screenshots"));
+
+  const dossier = buildDossier(output, { text_max_bytes: 65536 });
+  writeFileSync(join(output, "dossier.json"), dossier);
+
+  const top = board.rows[0];
+  const steak = board.rows.find((r) => r.slug === "steakhouse-financial");
+  console.log(`board: ${board.rows.length} rows, watchlist ${board.counts.watchlist} covered`);
+  console.log(
+    `curve: log10(mcap) = ${c.intercept.toFixed(3)} + ${c.slope.toFixed(3)}*log10(TVL), R2 ${c.r2.toFixed(3)}, n ${c.n}, LOO x${c.looMiss.toFixed(2)}`,
+  );
+  console.log(`#1 ${top.name} ${fmtUsdFull(top.implied_value_usd)}`);
+  if (steak) {
+    console.log(
+      `Steakhouse Financial #${steak.rank} ${fmtUsdFull(steak.implied_value_usd)} (capped: ${steak.capped})`,
+    );
+  }
+  console.log(`dossier: ${dossier.length} bytes`);
+}
+
+main();

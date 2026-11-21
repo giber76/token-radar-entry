@@ -1,124 +1,127 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Radar — 198 pre-token protocols priced off the snapshot's own live tokens</title>
+<title>Token Launch Radar — Comps-Calibrated</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="top">
-  <div class="wrap">
-    <p class="eyebrow">TOKEN LAUNCH RADAR &middot; DEFI LLAMA SNAPSHOT &middot; <span id="asof">—</span></p>
-    <h1>198 protocols record no token. Here is what each launch would be worth.</h1>
-    <p class="lede">Every value is read off the snapshot&rsquo;s own live tokens: a size curve, a category
-    factor, seasoning and one more week of momentum.</p>
-    <dl class="kpis" id="kpis"></dl>
-    <p class="counts" id="counts"></p>
+  <div class="top-title">
+    <h1>Token Launch Radar</h1>
+    <p class="sub">Comps-calibrated implied values for protocols that record no token yet — ranked by what the market would pay, with a farm plan for each one.</p>
   </div>
+  <div class="chips" id="metaChips"></div>
 </header>
 
-<main class="wrap">
-  <section class="panel method" aria-label="How a launch is priced">
-    <div class="method-grid">
-      <div>
-        <h2>How a launch is priced</h2>
-        <div id="scatter"></div>
-        <p class="scatter-note" id="scatterNote"></p>
-      </div>
-      <div>
-        <h2>How a row is valued</h2>
-        <p class="formula" id="formula"></p>
-        <ul class="model" id="modelList"></ul>
-      </div>
-    </div>
-  </section>
+<nav class="tabs" id="tabs">
+  <button data-view="board" class="active">Board</button>
+  <button data-view="method">Method</button>
+  <button data-view="live">Live tokens</button>
+  <button data-view="aside">Set aside</button>
+</nav>
 
-  <section class="panel" aria-label="Filters">
+<main>
+  <section id="view-board" class="view">
     <div class="filters">
-      <label>Search <input id="q" type="search" placeholder="Protocol name or slug…" autocomplete="off"></label>
-      <label>Category <select id="cat"><option value="">All categories</option></select></label>
-      <label>Chain <select id="chain"><option value="">All chains</option></select></label>
-      <label class="check"><input id="wl" type="checkbox"> Watchlist only</label>
-      <label>Sort <select id="sort">
-        <option value="rank">Implied value ↓</option>
-        <option value="tvl">TVL ↓</option>
-        <option value="growth">7-day growth ↓</option>
-        <option value="age">Age ↓</option>
-        <option value="name">Name A–Z</option>
-      </select></label>
+      <input id="q" type="search" placeholder="Search protocol…" aria-label="Search protocol">
+      <select id="fCat" aria-label="Filter by category"><option value="">All categories</option></select>
+      <select id="fChain" aria-label="Filter by chain"><option value="">All chains</option></select>
+      <select id="fMin" aria-label="Minimum implied value">
+        <option value="0">Any implied value</option>
+        <option value="50000000">Implied ≥ $50M</option>
+        <option value="20000000">Implied ≥ $20M</option>
+        <option value="10000000">Implied ≥ $10M</option>
+        <option value="5000000">Implied ≥ $5M</option>
+      </select>
+      <label class="check"><input type="checkbox" id="fWatch"> Watchlist only</label>
+      <span class="count" id="rowCount"></span>
     </div>
-    <p class="count" id="count" aria-live="polite"></p>
+
+    <div id="detail" class="detail" hidden></div>
+
+    <div class="tablewrap">
+      <table id="board">
+        <thead>
+          <tr>
+            <th data-sort="r">#</th>
+            <th data-sort="n">Protocol</th>
+            <th data-sort="c">Category</th>
+            <th data-sort="ch">Chain</th>
+            <th data-sort="t">TVL</th>
+            <th data-sort="g">7d</th>
+            <th data-sort="i">Implied value</th>
+            <th>Uncertainty band</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody id="boardBody"></tbody>
+      </table>
+    </div>
+    <p class="hint">Click a row to open its detail view: the family comparables that set its factor, the uncertainty band, and the eight farm steps.</p>
   </section>
 
-  <section class="panel" aria-label="Ranked board">
-    <table id="board">
-      <thead><tr>
-        <th data-k="rank">#</th><th data-k="name">Protocol</th>
-        <th data-k="tvl">TVL</th><th data-k="growth">7d</th><th>No token for</th>
-        <th data-k="implied">Implied value</th><th>&times; TVL</th><th>Slice / $1k</th><th>Farm &middot; fees &middot; setup</th>
-      </tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-    <p class="hint">Dot: this radar&rsquo;s estimate. Bar: the middle half of live tokens&rsquo; misses around the
-    curve. Slice / $1k: what $1,000 staked would hold if depositors got 10% pro rata. Click a row for
-    the detail view: the value maths, the family comparables and the 8 farm steps.</p>
+  <section id="view-method" class="view" hidden>
+    <div class="method-grid">
+      <div class="card">
+        <h2>The size curve</h2>
+        <p class="formula" id="formula"></p>
+        <div id="scatter"></div>
+        <p class="note" id="fitNote"></p>
+      </div>
+      <div class="card">
+        <h2>What the curve says</h2>
+        <dl class="stats" id="modelStats"></dl>
+        <h3>Benchmark multiple</h3>
+        <p id="bench"></p>
+        <h3>The thin-category guard</h3>
+        <p id="guard"></p>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Implied value per $1,000 of TVL — the top 10</h2>
+      <p class="note">How many dollars of implied value each $1,000 of TVL buys. A high bar means the market pays a premium for this protocol's kind of TVL; a low bar means it is priced like plain size.</p>
+      <div id="perK"></div>
+    </div>
+    <div class="card">
+      <h2>Category factors</h2>
+      <p class="note">Each factor is the median residual of that category's live tokens against the curve, shrunk toward 1 by how many comparables the category has. A category with one live token barely moves the model.</p>
+      <table class="plain" id="factorTable">
+        <thead><tr><th>Category</th><th>Live tokens</th><th>Factor</th><th>Comparables</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 
-  <section class="panel" id="risingPanel" aria-label="Rising fast">
-    <h2>Rising fast — the early finds</h2>
-    <p>The five board protocols whose TVL grew fastest over the last 7 days. A fast grower with a
-    small TVL is the radar's early find: it ranks lower on implied value today, but its growth is
-    already moving it up. Growth counts in the value at 80% of the change, clamped to +100%, so a
-    +4,448% week still counts as +100%.</p>
-    <table id="rising"><thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>7-day growth</th><th>Implied value</th><th>Board rank</th></tr></thead><tbody></tbody></table>
+  <section id="view-live" class="view" hidden>
+    <div class="card">
+      <h2>Live tokens — the comparables</h2>
+      <p class="note">Protocols whose token already trades. They are not ranked on the board: they are the evidence the board is calibrated on. Each row shows the market's own value next to what the size curve alone would predict for its TVL.</p>
+      <table class="plain" id="liveTable">
+        <thead><tr><th>Protocol</th><th>Category</th><th>Market cap</th><th>TVL</th><th>MCap / TVL</th><th>Curve value</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 
-  <section class="panel" id="modelPanel" aria-label="How the value is built">
-    <h2>How the implied value is built</h2>
-    <p>Each protocol is priced off the market itself. First the size curve: the least-squares line
-    through the snapshot&rsquo;s live-token protocols, log market cap on log TVL — a small protocol&rsquo;s
-    token trades at a far higher multiple of its TVL than a giant&rsquo;s, so a flat multiple would
-    overprice the giants and underprice the small ones. Then the category factor: the median
-    residual of the protocol&rsquo;s own category off that line, shrunk toward 1 when the category is
-    thin — a category uses its own median when at least 3 live tokens trade there; a thinner
-    category borrows the median of its <strong>family</strong> — categories grouped by what they do
-    (vaults and curators, lending, trading, staking, bridges, RWA, AI, payments) — and a category
-    in no family is priced off the bare curve. Every factor on this board rests on at least 3 live
-    comparables, so one wild outlier never sets a price. Then:</p>
-    <ul class="model">
-      <li><strong>Growth</strong> — 7-day TVL change, clamped to −50%…+100%, moves value by 80% of the change.</li>
-      <li><strong>Maturity</strong> — 0.70 + 0.30 &times; min(age, 3y) / 3y. Older protocols are more proven; unknown age counts as 1 year.</li>
-      <li><strong>Chains</strong> — +3% per extra chain, up to 4 extra. Wider distribution is worth a little more.</li>
-      <li><strong>Band</strong> — the middle half of the live tokens land within the curve&rsquo;s residual P25…P75, so every row shows that band beside its point value.</li>
-    </ul>
-    <h3>Calibration groups</h3>
-    <table id="comps"><thead><tr><th>Group</th><th>Live comps</th><th>Category factor</th><th>Basis</th></tr></thead><tbody></tbody></table>
-  </section>
-
-  <section class="panel" aria-label="Already trading">
-    <h2>Already trading — the comparables</h2>
-    <p>The 24 largest live-token protocols by market cap, at the market&rsquo;s own values. They calibrate the
-    board above; they are never ranked on it.</p>
-    <table id="live"><thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>Market cap</th><th>mcap / TVL</th></tr></thead><tbody></tbody></table>
-  </section>
-
-  <section class="panel" aria-label="Set aside">
-    <h2>Set aside — the rule leaves these out</h2>
-    <p>The house rule keeps wrapped, staked and bridged products of a token that already trades off
-    the board, along with versioned names and exchange names. The 24 largest of them, by TVL.</p>
-    <table id="setaside"><thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>Why set aside</th></tr></thead><tbody></tbody></table>
+  <section id="view-aside" class="view" hidden>
+    <div class="card">
+      <h2>Set aside — looked at, left out</h2>
+      <p class="note">Protocols the radar considered and did not rank as launches, with the reason. A token that already trades, a wrapped or staked product, or an exchange product is not a launch.</p>
+      <table class="plain" id="asideTable">
+        <thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>Why it is set aside</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 </main>
 
-<aside id="detail" class="drawer" aria-label="Protocol detail" hidden>
-  <button id="close" type="button" aria-label="Close detail">✕</button>
-  <div id="detailBody"></div>
-</aside>
-<div id="scrim" hidden></div>
+<footer>
+  <p>Data: the sealed snapshot (<span id="srcNote"></span>). The snapshot carries no ranking, no implied value and no farm plan — deriving them is this entry's work. Values are implied, not promised: the middle-half band shows how wide the market's own pricing is around the curve.</p>
+</footer>
 
-<footer class="wrap"><p id="src"></p></footer>
-<script src="../data.js"></script>
+<script src="data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

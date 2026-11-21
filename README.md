@@ -1,46 +1,40 @@
-# Token Radar — pre-token protocols ranked by implied launch value
+# Token Launch Radar
 
-Entry for make.fun `token-radar-01`: build the best token launch radar.
+[![token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01)
+[![rank](https://make.fun/badge/token-radar-01/giber76/token-radar-entry/rank.svg)](https://make.fun/bounty/token-radar-01)
+[![reward](https://make.fun/badge/token-radar-01/giber76/token-radar-entry/reward.svg)](https://make.fun/bounty/token-radar-01)
 
-## What it does
+A dashboard that ranks protocols whose token does not exist yet by an implied value, calibrated on the market's own pricing — and shows how to farm each one.
 
-`main.ts` reads the sealed DefiLlama snapshot (`/input/snapshot.json`), scores
-every rankable pre-token protocol with the comps-calibrated model in
-`lib/model.ts`, and writes the ranked board (`board.json`), the dashboard data
-(`data.js`), the dashboard and the screenshots into `/output`, plus
-`dossier.json` via `vendor/makefun-board.ts`.
+## The model
 
-## The model (`radar-2 comps`)
+Every number comes from the sealed snapshot (DefiLlama protocols, fetched 2026-11-14). Nothing is hardcoded by name.
 
-A protocol that already trades tells the market what a dollar of TVL is worth
-in its category. For each category the model takes the **median market-cap /
-TVL of the snapshot's own live-token protocols** in that category (≥3
-comparables, else the global median, clamped to 0.05…1.50), then adjusts by
-the protocol's own 7-day TVL growth, its age since DefiLlama started tracking
-it, and how many chains it runs on:
+1. **Size curve.** Least squares on the snapshot's live tokens with TVL of $10M or more: `log10(market cap) = 3.40 + 0.48 × log10(TVL)` (R² 0.16, n = 101). Size alone prices a token weakly — the curve is the baseline, not the answer.
+2. **Category factor.** Each category's median residual against the curve, shrunk toward 1 by how many live tokens the category has (factor = 10^(median × n/(n+3)), clamped to 0.25–4×).
+3. **The protocol's own record.** Its 7-day TVL move (clamped to −50…+200%), how long it has run with no token, and how many chains it runs on — each a small, capped adjustment.
+4. **Thin-category guard.** A category with fewer than three live tokens cannot crown a winner: its excess above the board's 90th percentile is compressed to 5%. Steakhouse Financial (Risk Curators, one live comparable) lands at $49.8M instead of far above the leaders.
+5. **Uncertainty.** Every row carries the middle-half band of the curve's residuals (×0.28 to ×4.47) and the model reports a leave-one-out median miss of ×3.86 — the market's own pricing is wide, and the board says so.
 
-    implied = TVL × category multiple × growth × maturity × chains
-
-No protocol name is ever special-cased. The board ranks **all 198 rankable
-pre-token protocols** in the snapshot — the 40-protocol watchlist plus every
-other pre-token protocol that passes the house exclusion rule for wrapped,
-staked and bridged products of tokens that already trade. Live-token protocols are kept apart as comparables, at the market's own
-values. Each row carries an 8-step farm plan with costs and times, derived
-from the protocol's category, chains, TVL and age.
+The board ranks 200 rows: the 40 watchlist protocols plus the 160 pre-token protocols below the floor with the most TVL. Live tokens are kept in their own table — they are the evidence, not the ranking — and the protocols the radar set aside are listed with the reason.
 
 ## The dashboard
 
-A static page (no network): sortable/filterable board, a detail view per
-protocol showing the value maths and the farm plan, the category comparables
-table, and the live-token comparables. It reads the same `data.js` the board
-was built from, so page and board always agree.
+- **Board:** sortable and filterable (search, category, chain, minimum implied value, watchlist only), with the implied value, the uncertainty band and a farm verdict per row.
+- **Detail:** click a row for the family comparables that set its factor (at the market's own values), the uncertainty band, and eight concrete farm steps with what they cost and how long they take. Gas is priced from the protocol's own chain: about $15 on Ethereum, under $1 on Solana.
+- **Method:** the size-curve scatter plot, the fit, the benchmark multiple (live tokens trade at a median 0.21× TVL), the implied value per $1,000 of TVL for the top 10, and the category factors.
+- **Live tokens / Set aside:** the two tables the board keeps apart from the ranking.
 
-## Run it
+## Running it
 
-    mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <kit>/input/snapshot.json
+Node 22, standard library only, no network:
 
-Runs are deterministic: two runs write identical bytes.
+```sh
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
+```
+
+`main.ts` reads the snapshot, writes `board.json` (the 200 ranked rows, the model, the live-token and set-aside tables), writes the dashboard's data into `dashboard/data.js`, copies `dashboard/` and `screenshots/` to the output, and writes `dossier.json` with the vendored `buildDossier`. Two runs write the same bytes.
 
 ## License
 
-MIT — see `LICENSE`.
+MIT — see [LICENSE](LICENSE).
