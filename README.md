@@ -1,5 +1,11 @@
 # Token Launch Radar — v7
 
+[![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![rank](https://make.fun/badge/token-radar-01/giber76/token-radar-entry/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![reward](https://make.fun/badge/token-radar-01/giber76/token-radar-entry/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+
+Entry for [token-radar-01 on make.fun](https://make.fun/bounty/token-radar-01).
+
 Comps-calibrated token launch radar for make.fun token-radar-01. $1,325 prize, 1st $1,000. Ends 2026-12-14.
 
 ## Model (radar-7)
