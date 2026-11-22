@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Launch Radar — what the next token would be worth</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div>
+      <p class="kicker">TOKEN LAUNCH RADAR · <span id="asOf">—</span></p>
+      <h1>What the next token would be worth</h1>
+      <p class="lede">Every protocol in the snapshot that records no token, ranked by the
+      implied value of the token it would issue if the market priced it the way
+      it prices the tokens that already trade. <span id="boardCount">—</span> protocols
+      scored, <span id="watchCount">—</span> of them on the house watchlist.</p>
+    </div>
+    <div class="top-card">
+      <p class="top-card-label">TOP LAUNCH</p>
+      <p class="top-card-name" id="topName">—</p>
+      <p class="top-card-value" id="topValue">—</p>
+      <p class="top-card-sub" id="topSub">—</p>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-view="board" role="tab">Board</button>
+  <button class="tab" data-view="rising" role="tab">Rising fast</button>
+  <button class="tab" data-view="live" role="tab">Live tokens</button>
+  <button class="tab" data-view="method" role="tab">Method &amp; checks</button>
+</nav>
+
+<main>
+  <section id="view-board" class="view active">
+    <div class="filters">
+      <label>Search <input id="q" type="search" placeholder="protocol or category" autocomplete="off"></label>
+      <label>Category
+        <select id="cat"><option value="">All categories</option></select>
+      </label>
+      <label class="check"><input id="watchOnly" type="checkbox"> Watchlist only</label>
+      <label>Sort
+        <select id="sort">
+          <option value="rank">Implied value (rank)</option>
+          <option value="tvl">TVL</option>
+          <option value="growth">7-day growth</option>
+        </select>
+      </label>
+      <p class="count" id="shownCount">—</p>
+    </div>
+    <div class="table-wrap">
+      <table id="board">
+        <thead>
+          <tr>
+            <th>#</th><th>Protocol</th><th>Category</th><th>TVL</th><th>7d</th>
+            <th>Multiple</th><th>Implied value</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="note">Implied value = TVL × blended multiple × growth × maturity × chains.
+    The multiple blends the protocol's category median (70%) with its TVL-band
+    median (30%). Click a row for the full farm plan and the model's working.</p>
+  </section>
+
+  <section id="view-detail" class="view">
+    <button class="back" id="backBtn">← Back to the board</button>
+    <div id="detail"></div>
+  </section>
+
+  <section id="view-rising" class="view">
+    <h2>Rising fast</h2>
+    <p class="lede">The board's fastest growers over 7 days — the early finds, largest first.</p>
+    <div class="table-wrap">
+      <table id="rising">
+        <thead><tr><th>#</th><th>Protocol</th><th>Category</th><th>TVL</th><th>7d</th><th>Implied value</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="view-live" class="view">
+    <h2>Live tokens — the comparables</h2>
+    <p class="lede">Protocols that already trade, at the market's own values. They set the
+    multiples; they never appear on the ranked board.</p>
+    <div class="table-wrap">
+      <table id="live">
+        <thead><tr><th>Protocol</th><th>Category</th><th>TVL</th><th>Market cap</th><th>MCap / TVL</th><th>7d</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="view-method" class="view">
+    <h2>Method &amp; checks</h2>
+    <div id="methodBody"></div>
+  </section>
+</main>
+
+<footer>
+  <p>Source: <span id="source">—</span> · Snapshot as of <span id="asOf2">—</span> ·
+  Floor <span id="floor">—</span> · Model <span id="modelVersion">—</span> ·
+  An implied value is this entry's own claim, never make.fun's. A protocol that
+  records no token may still have one its DefiLlama record does not carry.</p>
+</footer>
+
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
